@@ -16,36 +16,45 @@
   <button id="button">Try it</button>
   <hr>
   <span>Playback volume gain</span>
-  <input type="number" id="vg" value="50">
+  <input type="number" id="vg" value="5">
+  <hr>
+  <span>Playback rate</span>
+  <input type="number" id="pbr" value="0.5">
 </body>
 <script>
+  let mediaRecorder = null;
+  let chunks = [];
+  let resolvef = null;
+  (async () => {
+    console.log("picking system audio");
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    const track = stream.getAudioTracks()[0];
+    if (!track)
+      throw "System audio not available";
+
+    stream.getVideoTracks().forEach(track => track.stop());
+
+    const mediaStream = new MediaStream();
+    mediaStream.addTrack(track);
+
+    mediaRecorder = new MediaRecorder(mediaStream, { bitsPerSecond: 128000 });
+    mediaRecorder.ondataavailable = event => {
+      if (event.data.size > 0)
+        chunks.push(event.data);
+    }
+    mediaRecorder.onstop = () => {
+      // stream.getTracks().forEach(track => track.stop());
+      // mediaStream.removeTrack(track);
+      chunks.reverse();
+      resolvef(new Blob(chunks));
+    }
+  })()
   document.getElementById("button").onclick = function (event) {
+    chunks = [];
     const text = document.getElementById("text").value;
     (async () => {
       const blob = await new Promise(async resolve => {
-        console.log("picking system audio");
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        const track = stream.getAudioTracks()[0];
-        if (!track)
-          throw "System audio not available";
-
-        stream.getVideoTracks().forEach(track => track.stop());
-
-        const mediaStream = new MediaStream();
-        mediaStream.addTrack(track);
-
-        const chunks = [];
-        const mediaRecorder = new MediaRecorder(mediaStream, { bitsPerSecond: 128000 });
-        mediaRecorder.ondataavailable = event => {
-          if (event.data.size > 0)
-            chunks.push(event.data);
-        }
-        mediaRecorder.onstop = () => {
-          stream.getTracks().forEach(track => track.stop());
-          mediaStream.removeTrack(track);
-          chunks.reverse();
-          resolve(new Blob(chunks));
-        }
+        resolvef = resolve;
         mediaRecorder.start();
 
         const utterance = new SpeechSynthesisUtterance(text);
@@ -63,20 +72,15 @@
         console.log(source);
         Array.prototype.reverse.call(buffer.getChannelData(0));
         source.buffer = buffer;
+        source.playbackRate.value = parseFloat(document.getElementById("pbr").value);
 
-        let gainNode = audioContext.createGain()
-        gainNode.gain.value = parseFloat(document.getElementById("vg").value)
-        gainNode.connect(audioContext.destination)
+        let gainNode = audioContext.createGain();
+        gainNode.gain.value = parseFloat(document.getElementById("vg").value);
+        gainNode.connect(audioContext.destination);
 
         source.connect(gainNode);
         source.start();
       })
-
-      // const player = new Audio();
-      // player.src = URL.createObjectURL(blob);
-      // player.autoplay = true;
-      // player.controls = true;
-
     })()
   }
 </script>
